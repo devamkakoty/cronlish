@@ -1,4 +1,5 @@
 """Contracts for compact output, shared validation, and the real CLI."""
+import os
 import subprocess
 import sys
 
@@ -34,14 +35,19 @@ def test_required_examples_exact(expr, expected, capsys):
     ("0 9 1 1 MON", "09:00 dom-1|Mon mon-Jan"),
     ("0 9 * 3,6,9 MON-FRI", "09:00 Mon-Fri mon-Mar,Jun,Sep"),
     ("0 0 * 1-3 *", "00:00 mon-Jan-Mar"),
+    ("* 9-17 * * *", "every min hour-9-17"),
+    ("0 0 */2 */3 */2",
+     "00:00 dom-1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31"
+     "|Sun,Tue,Thu,Sat mon-Jan,Apr,Jul,Oct"),
     ("@hourly", "min-0 hourly"),
     ("@Daily", "00:00 daily"),
+    ("@midnight", "00:00 daily"),
     ("@weekly", "00:00 Sun"),
     ("@monthly", "00:00 dom-1"),
     ("@yearly", "00:00 dom-1 mon-Jan"),
+    ("@annually", "00:00 dom-1 mon-Jan"),
 ])
 def test_supported_shapes_are_compact_and_deterministic(expr, expected):
-    assert terse(expr) == expected
     assert terse(expr) == expected
 
 
@@ -126,3 +132,34 @@ def test_process_boundary_for_required_example():
     assert result.returncode == 0
     assert result.stdout == "09:00 Mon-Fri\n"
     assert result.stderr == ""
+
+
+def test_process_boundary_for_invalid_style():
+    result = subprocess.run(
+        [sys.executable, "-m", "cronlish.cli",
+         "--locale-style", "klingon", "* * * * *"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "invalid choice" in result.stderr
+    assert "klingon" in result.stderr
+
+
+def test_separate_processes_are_byte_identical():
+    command = [
+        sys.executable, "-m", "cronlish.cli",
+        "--locale-style", "terse", "0 9 1 1 MON",
+    ]
+    first = subprocess.run(
+        command, capture_output=True, text=False, check=False,
+    )
+    second = subprocess.run(
+        command, capture_output=True, text=False, check=False,
+    )
+    assert first.returncode == second.returncode == 0
+    expected = ("09:00 dom-1|Mon mon-Jan" + os.linesep).encode()
+    assert first.stdout == second.stdout == expected
+    assert first.stderr == second.stderr == b""
